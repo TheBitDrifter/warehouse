@@ -20,13 +20,15 @@ func (c *SimpleCache[T]) GetItem32(index uint32) *T {
 }
 
 func (c *SimpleCache[T]) Register(key string, item T) (int, error) {
+	// TODO: PROPER ERROR
 	if len(c.itemIndices) >= c.maxCapacity {
 		return -1, fmt.Errorf("cache at maximum capacity (%d)", c.maxCapacity)
 	}
 
 	idx := len(c.items)
 	c.itemIndices[key] = idx
-	c.items[idx] = item
+	c.items = append(c.items, item) // Use append instead of direct assignment
+
 	return idx, nil
 }
 
