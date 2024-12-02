@@ -2,16 +2,14 @@ package warehouse
 
 import (
 	"fmt"
-
-	"github.com/TheBitDrifter/table"
 )
 
 type operation struct {
 	typ      operationType
 	amount   int
 	comps    []Component
-	entryIDs []table.EntryID
-	table    table.Table
+	entities []Entity
+	sto      Storage
 }
 
 type operationType int
@@ -24,8 +22,7 @@ const (
 )
 
 type opKey struct {
-	table table.Table
-	id    table.EntryID
+	entity Entity
 }
 
 type opQueue struct {
@@ -70,22 +67,19 @@ func (s *storage) processOperationQueue() error {
 
 	// Process component modifications
 	for _, op := range s.opQueue.componentOps {
-		entry, err := op.table.Entry(int(op.entryIDs[0]))
-		if err != nil {
-			return fmt.Errorf("failed to get entry for queued component operation: %w", err)
-		}
-		e := &entity{
-			Entry: entry,
-			sto:   s,
-		}
+		entity := op.entities[0]
 
+		// Verify entry hasn't been recycled
+		if entity.ID() == 0 {
+			continue
+		}
 		switch op.typ {
 		case opAddComponent:
-			if err := e.AddComponent(op.comps[0]); err != nil {
+			if err := entity.AddComponent(op.comps[0]); err != nil {
 				return fmt.Errorf("failed to add queued component: %w", err)
 			}
 		case opRemoveComponent:
-			if err := e.RemoveComponent(op.comps[0]); err != nil {
+			if err := entity.RemoveComponent(op.comps[0]); err != nil {
 				return fmt.Errorf("failed to remove queued component: %w", err)
 			}
 		}
@@ -93,12 +87,15 @@ func (s *storage) processOperationQueue() error {
 
 	// Process destroys last
 	for _, op := range s.opQueue.destroyOps {
-		ids := make([]int, len(op.entryIDs))
-		for i, eID := range op.entryIDs {
-			ids[i] = int(eID)
+		var entities []Entity
+		for _, entity := range op.entities {
+			entities = append(entities, entity)
 		}
-		if _, err := op.table.DeleteEntries(ids...); err != nil {
-			return fmt.Errorf("failed to delete queued entries: %w", err)
+
+		if len(entities) > 0 {
+			if err := op.sto.DestroyEntities(entities...); err != nil {
+				return fmt.Errorf("failed to delete queued entries: %w", err)
+			}
 		}
 	}
 
@@ -108,17 +105,16 @@ func (s *storage) processOperationQueue() error {
 	s.opQueue.destroyOps = s.opQueue.destroyOps[:0]
 	clear(s.opQueue.pendingDestroy)
 	clear(s.opQueue.pendingMods)
-
 	return nil
 }
 
-func (q *opQueue) EnqueueDestroy(tbl table.Table, ids []table.EntryID) {
+func (q *opQueue) EnqueueDestroy(sto Storage, entries []Entity) {
 	// Filter out already queued entities
-	var newIDs []table.EntryID
-	for _, id := range ids {
-		key := opKey{table: tbl, id: id}
+	var newEntities []Entity
+	for _, entity := range entries {
+		key := opKey{entity: entity}
 		if _, exists := q.pendingDestroy[key]; !exists {
-			newIDs = append(newIDs, id)
+			newEntities = append(newEntities, entity)
 			q.pendingDestroy[key] = struct{}{}
 
 			// Remove any pending component operations for this entity
@@ -130,17 +126,17 @@ func (q *opQueue) EnqueueDestroy(tbl table.Table, ids []table.EntryID) {
 		}
 	}
 
-	if len(newIDs) > 0 {
+	if len(newEntities) > 0 {
 		q.destroyOps = append(q.destroyOps, operation{
 			typ:      opDestroy,
-			entryIDs: newIDs,
-			table:    tbl,
+			entities: newEntities,
+			sto:      sto,
 		})
 	}
 }
 
-func (q *opQueue) EnqueueComponentOp(typ operationType, tbl table.Table, id table.EntryID, comp Component) {
-	key := opKey{table: tbl, id: id}
+func (q *opQueue) EnqueueComponentOp(typ operationType, sto Storage, entity Entity, comp Component) {
+	key := opKey{entity: entity}
 
 	// If entity is pending destroy, ignore component operations
 	if _, isDestroyed := q.pendingDestroy[key]; isDestroyed {
@@ -159,8 +155,8 @@ func (q *opQueue) EnqueueComponentOp(typ operationType, tbl table.Table, id tabl
 	q.pendingMods[key] = len(q.componentOps)
 	q.componentOps = append(q.componentOps, operation{
 		typ:      typ,
-		entryIDs: []table.EntryID{id},
-		table:    tbl,
+		entities: []Entity{entity},
+		sto:      sto,
 		comps:    []Component{comp},
 	})
 }

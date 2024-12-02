@@ -68,6 +68,7 @@ func (c *Cursor) initialize() {
 	if c.initialized {
 		return
 	}
+	c.storage.Lock()
 	c.matchedStorages = make([]archetype, 0)
 
 	// Find all matching archetypes
@@ -93,8 +94,13 @@ func (c *Cursor) Reset() {
 	c.storage.Unlock()
 }
 
-func (c *Cursor) CurrentEntity() (int, table.Table) {
-	return c.entityIndex, c.currentArchetype.table
+func (c *Cursor) CurrentEntity() (Entity, error) {
+	entry, err := c.currentArchetype.table.Entry(c.entityIndex - 1)
+	if err != nil {
+		return nil, err
+	}
+	entityID := entry.ID()
+	return c.storage.Entity(int(entityID))
 }
 
 func (c *Cursor) RemainingInArchetype() int {

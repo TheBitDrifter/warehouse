@@ -7,6 +7,7 @@ import (
 )
 
 type Storage interface {
+	Entity(id int) (Entity, error)
 	NewEntities(int, ...Component) ([]Entity, error)
 	EnqueueNewEntities(int, ...Component) error
 	DestroyEntities(...Entity) error
@@ -14,14 +15,19 @@ type Storage interface {
 	RowIndexFor(Component) uint32
 	Locked() bool
 	Lock()
-	Unlock() error
+	Unlock()
 }
 
 type EntityDestroyCallback func(Entity)
 
 type Entity interface {
 	table.Entry
+	SetParent(parent Entity, callback EntityDestroyCallback) error
 	SetDestroyCallback(EntityDestroyCallback) error
+	AddComponent(Component) error
+	RemoveComponent(Component) error
+	EnqueueAddComponent(Component) error
+	EnqueueRemoveComponent(Component) error
 }
 
 type Component interface {

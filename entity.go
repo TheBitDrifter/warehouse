@@ -11,14 +11,31 @@ import (
 var _ Entity = &entity{}
 
 type entity struct {
-	sto *storage
 	table.Entry
+	id            table.EntryID
+	sto           *storage
 	relationships relationships
 }
 
 type relationships struct {
 	parent    Entity
 	onDestroy EntityDestroyCallback
+}
+
+func (e *entity) ID() table.EntryID {
+	return e.id
+}
+
+func (e *entity) Index() int {
+	return e.entry().Index()
+}
+
+func (e *entity) Recycled() int {
+	return e.entry().Recycled()
+}
+
+func (e *entity) Table() table.Table {
+	return e.entry().Table()
 }
 
 func (e *entity) SetParent(parent Entity, callback EntityDestroyCallback) error {
@@ -55,7 +72,6 @@ func (e *entity) AddComponent(c Component) error {
 	if err != nil {
 		return fmt.Errorf("failed to get/create archetype: %w", err)
 	}
-
 	if err := originTable.TransferEntries(destArchetype.table, e.Index()); err != nil {
 		return fmt.Errorf("failed to transfer entity: %w", err)
 	}
@@ -90,7 +106,7 @@ func (e *entity) EnqueueAddComponent(c Component) error {
 	if !e.sto.locked {
 		return e.AddComponent(c)
 	}
-	e.sto.opQueue.EnqueueComponentOp(opAddComponent, e.Table(), e.ID(), c)
+	e.sto.opQueue.EnqueueComponentOp(opAddComponent, e.sto, e, c)
 	return nil
 }
 
@@ -98,7 +114,7 @@ func (e *entity) EnqueueRemoveComponent(c Component) error {
 	if !e.sto.locked {
 		return e.RemoveComponent(c)
 	}
-	e.sto.opQueue.EnqueueComponentOp(opRemoveComponent, e.Table(), e.ID(), c)
+	e.sto.opQueue.EnqueueComponentOp(opRemoveComponent, e.sto, e, c)
 	return nil
 }
 
@@ -152,4 +168,9 @@ func (e *entity) getOrCreateArchetypeWithout(mask mask.Mask, removeComp Componen
 	e.sto.archetypes.nextID++
 
 	return created, nil
+}
+
+func (e *entity) entry() table.Entry {
+	en, _ := mainIndex.Entry(int(e.id - 1))
+	return en
 }
