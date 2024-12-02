@@ -4,5 +4,9 @@ github.com/TheBitDrifter/table v0.0.0-20241122171256-f97dd23008cd h1:dmFcNf2w1u8
 github.com/TheBitDrifter/table v0.0.0-20241122171256-f97dd23008cd/go.mod h1:XS5HEO4K9gZmCzGpB6E8r/If186aZhQNnl4Pm6Uok1Y=
 github.com/TheBitDrifter/table v0.0.0-20241123155356-a348638025c4 h1:LJc9tHz10qLUHlrW5rUhcXDxcieUs/vgFhDDeVxUI0I=
 github.com/TheBitDrifter/table v0.0.0-20241123155356-a348638025c4/go.mod h1:XS5HEO4K9gZmCzGpB6E8r/If186aZhQNnl4Pm6Uok1Y=
+github.com/TheBitDrifter/table v0.0.0-20241202215936-f4c01e14f006 h1:qjSWEeEMUZI5HifmW5sKwFyjjE7xMoBuxhvrLy9LgLI=
+github.com/TheBitDrifter/table v0.0.0-20241202215936-f4c01e14f006/go.mod h1:XS5HEO4K9gZmCzGpB6E8r/If186aZhQNnl4Pm6Uok1Y=
+github.com/TheBitDrifter/table v0.0.0-20241202220515-0ec24f7c5430 h1:sBslGbuscQBygMlEt0GZSxZZaH+cZWSX/kEV2cLMBp0=
+github.com/TheBitDrifter/table v0.0.0-20241202220515-0ec24f7c5430/go.mod h1:XS5HEO4K9gZmCzGpB6E8r/If186aZhQNnl4Pm6Uok1Y=
 github.com/TheBitDrifter/util v0.0.0-20241102212109-342f4c0a810e h1:GichypQhTVgS3J1TpSs2nuij+L2EtxBSv70vjk03KAg=
 github.com/TheBitDrifter/util v0.0.0-20241102212109-342f4c0a810e/go.mod h1:k3LfyqK/t6Tm1vP1jqGvmIgc05BTEI6rbOEhkXS1uH4=
