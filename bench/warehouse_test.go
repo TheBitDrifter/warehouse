@@ -1,17 +1,10 @@
-package warehouse_bench
+package bench
 
 import (
 	"testing"
 
 	"github.com/TheBitDrifter/table"
 	"github.com/TheBitDrifter/warehouse"
-)
-
-// go test -bench=. ./benchmarks/proto -benchmem -cpuprofile=kain.prof -tags="unsafe c256"
-
-const (
-	nPos    = 9000
-	nPosVel = 1000
 )
 
 type Position struct {

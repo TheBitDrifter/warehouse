@@ -1,162 +1,157 @@
 package warehouse
 
-import (
-	"fmt"
-)
-
-type operation struct {
-	typ      operationType
-	amount   int
-	comps    []Component
-	entities []Entity
-	sto      Storage
+// EntityOperation represents an operation that can be applied to a storage
+type EntityOperation interface {
+	Apply(Storage) error
 }
 
-type operationType int
-
-const (
-	opCreate operationType = iota
-	opDestroy
-	opAddComponent
-	opRemoveComponent
-)
-
-type opKey struct {
-	entity Entity
+// entityOperationsQueue holds a list of operations to be processed
+type entityOperationsQueue struct {
+	operations []EntityOperation
 }
 
-type opQueue struct {
-	createOps      []operation
-	componentOps   []operation
-	destroyOps     []operation
-	pendingDestroy map[opKey]struct{}
-	pendingMods    map[opKey]int
+// EntityOperationsQueue provides an interface for queuing and processing operations
+type EntityOperationsQueue interface {
+	Enqueue(EntityOperation)
+	ProcessAll(Storage) error
 }
 
-func newOpQueue() opQueue {
-	return opQueue{
-		pendingDestroy: make(map[opKey]struct{}),
-		pendingMods:    make(map[opKey]int),
-	}
-}
-
-func (q *opQueue) enqueueOp(op operation) {
-	switch op.typ {
-	case opCreate:
-		q.createOps = append(q.createOps, op)
-	case opDestroy:
-		q.destroyOps = append(q.destroyOps, op)
-	case opAddComponent, opRemoveComponent:
-		q.componentOps = append(q.componentOps, op)
-	}
-}
-
-func (s *storage) processOperationQueue() error {
-	if len(s.opQueue.createOps) == 0 &&
-		len(s.opQueue.componentOps) == 0 &&
-		len(s.opQueue.destroyOps) == 0 {
-		return nil
-	}
-
-	// Process creates first
-	for _, op := range s.opQueue.createOps {
-		if _, err := s.NewEntities(op.amount, op.comps...); err != nil {
-			return fmt.Errorf("failed to process queued entity creation: %w", err)
+// ProcessAll applies all queued operations to the provided storage
+// and clears the queue afterward
+func (queue *entityOperationsQueue) ProcessAll(sto Storage) error {
+	for _, op := range queue.operations {
+		err := op.Apply(sto)
+		if err != nil {
+			return err
 		}
 	}
-
-	// Process component modifications
-	for _, op := range s.opQueue.componentOps {
-		entity := op.entities[0]
-
-		// Verify entry hasn't been recycled
-		if entity.ID() == 0 {
-			continue
-		}
-		switch op.typ {
-		case opAddComponent:
-			if err := entity.AddComponent(op.comps[0]); err != nil {
-				return fmt.Errorf("failed to add queued component: %w", err)
-			}
-		case opRemoveComponent:
-			if err := entity.RemoveComponent(op.comps[0]); err != nil {
-				return fmt.Errorf("failed to remove queued component: %w", err)
-			}
-		}
-	}
-
-	// Process destroys last
-	for _, op := range s.opQueue.destroyOps {
-		var entities []Entity
-		for _, entity := range op.entities {
-			entities = append(entities, entity)
-		}
-
-		if len(entities) > 0 {
-			if err := op.sto.DestroyEntities(entities...); err != nil {
-				return fmt.Errorf("failed to delete queued entries: %w", err)
-			}
-		}
-	}
-
-	// Clear all queues
-	s.opQueue.createOps = s.opQueue.createOps[:0]
-	s.opQueue.componentOps = s.opQueue.componentOps[:0]
-	s.opQueue.destroyOps = s.opQueue.destroyOps[:0]
-	clear(s.opQueue.pendingDestroy)
-	clear(s.opQueue.pendingMods)
+	queue.operations = []EntityOperation{}
 	return nil
 }
 
-func (q *opQueue) EnqueueDestroy(sto Storage, entries []Entity) {
-	// Filter out already queued entities
-	var newEntities []Entity
-	for _, entity := range entries {
-		key := opKey{entity: entity}
-		if _, exists := q.pendingDestroy[key]; !exists {
-			newEntities = append(newEntities, entity)
-			q.pendingDestroy[key] = struct{}{}
-
-			// Remove any pending component operations for this entity
-			if idx, hasMods := q.pendingMods[key]; hasMods {
-				// Mark operation as no-op by setting type to invalid
-				q.componentOps[idx].typ = -1
-				delete(q.pendingMods, key)
-			}
-		}
-	}
-
-	if len(newEntities) > 0 {
-		q.destroyOps = append(q.destroyOps, operation{
-			typ:      opDestroy,
-			entities: newEntities,
-			sto:      sto,
-		})
-	}
+// Enqueue adds an operation to the queue
+func (queue *entityOperationsQueue) Enqueue(op EntityOperation) {
+	queue.operations = append(queue.operations, op)
 }
 
-func (q *opQueue) EnqueueComponentOp(typ operationType, sto Storage, entity Entity, comp Component) {
-	key := opKey{entity: entity}
+// NewEntityOperation creates multiple entities with the same components
+type NewEntityOperation struct {
+	count      int
+	components []Component
+}
 
-	// If entity is pending destroy, ignore component operations
-	if _, isDestroyed := q.pendingDestroy[key]; isDestroyed {
-		return
+// Apply creates entities with the specified components
+func (op NewEntityOperation) Apply(sto Storage) error {
+	entityArchetype, err := sto.NewOrExistingArchetype(op.components...)
+	if err != nil {
+		return err
 	}
-
-	// If entity already has pending component operations, update existing operation
-	if existingIdx, exists := q.pendingMods[key]; exists {
-		existingOp := &q.componentOps[existingIdx]
-		existingOp.comps = []Component{comp}
-		existingOp.typ = typ
-		return
+	err = entityArchetype.Generate(op.count)
+	if err != nil {
+		return err
 	}
+	return nil
+}
 
-	// Add new operation
-	q.pendingMods[key] = len(q.componentOps)
-	q.componentOps = append(q.componentOps, operation{
-		typ:      typ,
-		entities: []Entity{entity},
-		sto:      sto,
-		comps:    []Component{comp},
-	})
+// DestroyEntityOperation removes an entity from storage
+type DestroyEntityOperation struct {
+	entity   Entity
+	recycled int
+}
+
+// Apply destroys the entity if it's valid and has the expected recycled value
+func (op DestroyEntityOperation) Apply(sto Storage) error {
+	if !op.entity.Valid() {
+		return nil
+	}
+	if op.entity.Recycled() != op.recycled {
+		return nil
+	}
+	err := sto.DestroyEntities(op.entity)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// TransferEntityOperation moves an entity from one storage to another
+type TransferEntityOperation struct {
+	target   Storage
+	entity   Entity
+	recycled int
+}
+
+// Apply transfers the entity if it's valid and has the expected recycled value
+func (op TransferEntityOperation) Apply(sto Storage) error {
+	if !op.entity.Valid() {
+		return nil
+	}
+	if op.entity.Recycled() != op.recycled {
+		return nil
+	}
+	err := sto.TransferEntities(op.target, op.entity)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// AddComponentOperation adds a component to an entity
+type AddComponentOperation struct {
+	entity    Entity
+	recycled  int
+	component Component
+	value     any
+	storage   Storage
+}
+
+// Apply adds the component to the entity if conditions are met
+func (op AddComponentOperation) Apply(sto Storage) error {
+	if !op.entity.Valid() {
+		return nil
+	}
+	if op.entity.Recycled() != op.recycled {
+		return nil
+	}
+	if op.storage != op.entity.Storage() {
+		return nil
+	}
+	if op.value != nil {
+		err := op.entity.AddComponentWithValue(op.component, op.value)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	err := op.entity.AddComponent(op.component)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// RemoveComponentOperation removes a component from an entity
+type RemoveComponentOperation struct {
+	entity    Entity
+	recycled  int
+	component Component
+	storage   Storage
+}
+
+// Apply removes the component from the entity if conditions are met
+func (op RemoveComponentOperation) Apply(sto Storage) error {
+	if !op.entity.Valid() {
+		return nil
+	}
+	if op.entity.Recycled() != op.recycled {
+		return nil
+	}
+	if op.storage != sto {
+		return nil
+	}
+	err := op.entity.RemoveComponent(op.component)
+	if err != nil {
+		return err
+	}
+	return nil
 }

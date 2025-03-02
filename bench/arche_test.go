@@ -1,4 +1,4 @@
-package warehouse_bench
+package bench
 
 import (
 	"testing"
@@ -15,8 +15,6 @@ func BenchmarkIterArche(b *testing.B) {
 
 	ecs.NewBuilder(&world, posID).NewBatch(nPos)
 	ecs.NewBuilder(&world, posID, velID).NewBatch(nPosVel)
-
-	// var filter ecs.Filter = filter.Any(posID, velID)
 
 	var filter ecs.Filter = ecs.All(posID, velID)
 	b.StartTimer()
