@@ -15,8 +15,19 @@ type iCursor interface {
 	Next() bool
 }
 
+type iterBitLock32 uint32
+
+var iterBitLock iterBitLock32 = 0
+
+func (ibl *iterBitLock32) Next() uint32 {
+	result := uint32(*ibl)
+	*ibl = (*ibl + 1) % 257
+	return result
+}
+
 // Cursor provides iteration over filtered entities in storage
 type Cursor struct {
+	bitLock          uint32
 	query            QueryNode
 	storage          Storage
 	currentArchetype ArchetypeImpl
@@ -97,7 +108,8 @@ func (c *Cursor) Initialize() {
 		return
 	}
 
-	c.storage.AddLock()
+	c.bitLock = iterBitLock.Next()
+	c.storage.AddLock(c.bitLock)
 	c.matchedStorages = make([]ArchetypeImpl, 0)
 
 	// Find all matching archetypes
@@ -123,7 +135,8 @@ func (c *Cursor) Reset() {
 	c.remaining = 0
 	c.matchedStorages = nil
 	c.initialized = false
-	c.storage.PopLock()
+	c.storage.RemoveLock(c.bitLock)
+	c.bitLock = 0
 }
 
 // CurrentEntity returns the entity at the current cursor position

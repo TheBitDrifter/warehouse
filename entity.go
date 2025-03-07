@@ -83,10 +83,6 @@ func (e *entity) Storage() Storage {
 	return e.sto
 }
 
-func (e *entity) setStorage(newSto *storage) {
-	e.sto = newSto
-}
-
 // SetParent establishes a parent-child relationship with another entity
 func (e *entity) SetParent(parent Entity, callback EntityDestroyCallback) error {
 	if e.relationships.parent != nil {

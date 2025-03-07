@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/TheBitDrifter/bark"
 	"github.com/TheBitDrifter/mask"
 	"github.com/TheBitDrifter/table"
 )
@@ -27,8 +26,8 @@ type Storage interface {
 	EnqueueDestroyEntities(...Entity) error
 	RowIndexFor(Component) uint32
 	Locked() bool
-	AddLock()
-	PopLock()
+	AddLock(bit uint32)
+	RemoveLock(bit uint32)
 	Register(...Component)
 	tableFor(...Component) (table.Table, error)
 
@@ -39,8 +38,7 @@ type Storage interface {
 
 // storage implements the Storage interface
 type storage struct {
-	locked         bool
-	locks          int
+	locks          mask.Mask256
 	schema         table.Schema
 	archetypes     *archetypes
 	operationQueue EntityOperationsQueue
@@ -97,7 +95,7 @@ func (sto *storage) NewOrExistingArchetype(components ...Component) (Archetype, 
 
 // NewEntities creates n new entities with the specified components
 func (sto *storage) NewEntities(n int, components ...Component) ([]Entity, error) {
-	if sto.locked {
+	if sto.Locked() {
 		return nil, errors.New("storage is locked")
 	}
 	var entityMask mask.Mask
@@ -153,33 +151,30 @@ func (sto *storage) RowIndexFor(c Component) uint32 {
 
 // Locked checks if the storage is currently locked
 func (sto *storage) Locked() bool {
-	return sto.locks != 0
+	return !sto.locks.IsEmpty()
 }
 
-// AddLock increments the lock counter and sets the locked state
-func (sto *storage) AddLock() {
-	sto.locks++
-	sto.locked = true
+func (sto *storage) AddLock(bit uint32) {
+	sto.locks.Mark(bit)
 }
 
-// PopLock decreases the lock counter and processes queued operations if unlocked
-func (sto *storage) PopLock() {
-	sto.locked = false
-	if sto.locks == 0 {
-		return
-	}
-	sto.locks--
-	if !sto.Locked() {
+// RemoveLock releases a specific bit lock and processes queued operations if fully unlocked
+func (sto *storage) RemoveLock(bit uint32) {
+	sto.locks.Unmark(bit)
+
+	// Only process operations if no locks remain
+	if sto.locks.IsEmpty() {
 		err := sto.operationQueue.ProcessAll(sto)
 		if err != nil {
-			panic(bark.AddTrace(err))
+			// Handle the error appropriately for your application
+			panic(fmt.Errorf("error processing queued operations: %w", err))
 		}
 	}
 }
 
 // EnqueueNewEntities either creates entities immediately or queues creation if storage is locked
 func (s *storage) EnqueueNewEntities(count int, components ...Component) error {
-	if !s.locked {
+	if !s.Locked() {
 		_, err := s.NewEntities(count, components...)
 		if err != nil {
 			return fmt.Errorf("failed to create entities directly: %w", err)
@@ -197,7 +192,7 @@ func (s *storage) EnqueueNewEntities(count int, components ...Component) error {
 
 // DestroyEntities removes entities from storage
 func (s *storage) DestroyEntities(entities ...Entity) error {
-	if s.locked {
+	if s.Locked() {
 		return errors.New("storage is locked")
 	}
 	tableGroups := make(map[table.Table][]int)
@@ -227,7 +222,7 @@ func (s *storage) DestroyEntities(entities ...Entity) error {
 
 // EnqueueDestroyEntities either destroys entities immediately or queues destruction if storage is locked
 func (s *storage) EnqueueDestroyEntities(entities ...Entity) error {
-	if !s.locked {
+	if !s.Locked() {
 		return s.DestroyEntities(entities...)
 	}
 	for _, en := range entities {
@@ -242,7 +237,7 @@ func (s *storage) EnqueueDestroyEntities(entities ...Entity) error {
 
 // TransferEntities moves entities from this storage to the target storage
 func (s *storage) TransferEntities(target Storage, entities ...Entity) error {
-	if s.locked {
+	if s.Locked() {
 		return errors.New("storage is locked")
 	}
 	for _, en := range entities {

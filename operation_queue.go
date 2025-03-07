@@ -19,6 +19,10 @@ type EntityOperationsQueue interface {
 // ProcessAll applies all queued operations to the provided storage
 // and clears the queue afterward
 func (queue *entityOperationsQueue) ProcessAll(sto Storage) error {
+	// If storage is locked, keep operations in queue for later processing
+	if sto.Locked() {
+		return nil // Return without error, but don't clear queue
+	}
 	for _, op := range queue.operations {
 		err := op.Apply(sto)
 		if err != nil {
