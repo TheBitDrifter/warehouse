@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"iter"
+	"sync/atomic"
 
 	"github.com/TheBitDrifter/table"
 )
@@ -15,14 +16,17 @@ type iCursor interface {
 	Next() bool
 }
 
-type iterBitLock32 uint32
+type iterBitLock32 struct {
+	counter atomic.Uint32
+}
 
-var iterBitLock iterBitLock32 = 0
+// Single instance of the bit lock generator
+var iterBitLock = &iterBitLock32{}
 
+// Next returns the next unique bit lock value in a thread-safe manner
 func (ibl *iterBitLock32) Next() uint32 {
-	result := uint32(*ibl)
-	*ibl = (*ibl + 1) % 257
-	return result
+	// Use atomic operations to safely increment and return
+	return (ibl.counter.Add(1)) % 257
 }
 
 // Cursor provides iteration over filtered entities in storage

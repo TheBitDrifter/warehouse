@@ -3,6 +3,7 @@ package warehouse
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/TheBitDrifter/mask"
 	"github.com/TheBitDrifter/table"
@@ -42,6 +43,7 @@ type storage struct {
 	schema         table.Schema
 	archetypes     *archetypes
 	operationQueue EntityOperationsQueue
+	lockMu         sync.Mutex // Added mutex to protect concurrent access to locks
 }
 
 // archetypes manages archetype collections and identification
@@ -151,24 +153,39 @@ func (sto *storage) RowIndexFor(c Component) uint32 {
 
 // Locked checks if the storage is currently locked
 func (sto *storage) Locked() bool {
+	sto.lockMu.Lock()
+	defer sto.lockMu.Unlock()
 	return !sto.locks.IsEmpty()
 }
 
+// AddLock adds a bit lock to prevent entity modifications
 func (sto *storage) AddLock(bit uint32) {
+	sto.lockMu.Lock()
+	defer sto.lockMu.Unlock()
 	sto.locks.Mark(bit)
 }
 
 // RemoveLock releases a specific bit lock and processes queued operations if fully unlocked
 func (sto *storage) RemoveLock(bit uint32) {
+	sto.lockMu.Lock()
+	defer sto.lockMu.Unlock()
+
 	sto.locks.Unmark(bit)
 
 	// Only process operations if no locks remain
 	if sto.locks.IsEmpty() {
+		// Release the lock before processing queue to avoid deadlocks
+		// since processing may involve acquiring the lock again
+		sto.lockMu.Unlock()
+
 		err := sto.operationQueue.ProcessAll(sto)
 		if err != nil {
 			// Handle the error appropriately for your application
 			panic(fmt.Errorf("error processing queued operations: %w", err))
 		}
+
+		// Re-acquire the lock
+		sto.lockMu.Lock()
 	}
 }
 
