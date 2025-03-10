@@ -46,7 +46,7 @@ func (c *SimpleCache[T]) GetIndex(key string) (int, bool) {
 func (c *SimpleCache[T]) GetItem(index int) T {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	item := c.items[index]
+	item := c.items[index-1]
 	return item
 }
 
@@ -54,7 +54,7 @@ func (c *SimpleCache[T]) GetItem(index int) T {
 func (c *SimpleCache[T]) GetItem32(index uint32) T {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	item := c.items[index]
+	item := c.items[index-1]
 	return item
 }
 
@@ -66,7 +66,7 @@ func (c *SimpleCache[T]) Register(key string, item T) (int, error) {
 	if len(c.itemIndices) >= c.maxCapacity {
 		return -1, fmt.Errorf("cache at maximum capacity (%d)", c.maxCapacity)
 	}
-	idx := len(c.items)
+	idx := len(c.items) + 1
 	c.itemIndices[key] = idx
 	c.items = append(c.items, item)
 	return idx, nil
