@@ -105,9 +105,9 @@ func (e *entity) Parent() Entity {
 		if e.relationships.parent.Recycled() != e.relationships.recycled {
 			return nil
 		}
-		return nil
+		return e.relationships.parent
 	}
-	return e.relationships.parent
+	return nil
 }
 
 // SetDestroyCallback sets the callback to be invoked when this entity is destroyed
@@ -121,9 +121,17 @@ func (e *entity) AddComponent(c Component) error {
 	if e.sto.Locked() {
 		return errors.New("storage is locked")
 	}
+
 	originTable := e.Table()
 	if originTable.Contains(c) {
 		return nil
+	}
+
+	// Check if the component already exists in the entity's component list
+	for _, comp := range e.components {
+		if comp.ID() == c.ID() {
+			return nil // Component already exists, nothing to do
+		}
 	}
 
 	e.components = append(e.components, c)
@@ -147,6 +155,14 @@ func (e *entity) AddComponentWithValue(c Component, value any) error {
 	if originTable.Contains(c) {
 		return nil
 	}
+
+	// Check if the component already exists in the entity's component list
+	for _, comp := range e.components {
+		if comp.ID() == c.ID() {
+			return nil // Component already exists, nothing to do
+		}
+	}
+
 	e.components = append(e.components, c)
 	destArchetype, err := e.sto.NewOrExistingArchetype(e.components...)
 	if err != nil {
@@ -175,18 +191,17 @@ func (e *entity) RemoveComponent(c Component) error {
 	if !originTable.Contains(c) {
 		return nil
 	}
-
 	newComps := []Component{}
 	for _, comp := range e.components {
 		if comp.ID() != c.ID() {
 			newComps = append(newComps, comp)
 		}
 	}
+	e.components = newComps
 	destArchetype, err := e.sto.NewOrExistingArchetype(newComps...)
 	if err != nil {
 		return fmt.Errorf("failed to get/create archetype: %w", err)
 	}
-
 	if err := originTable.TransferEntries(destArchetype.Table(), e.Index()); err != nil {
 		return fmt.Errorf("failed to transfer entity: %w", err)
 	}
