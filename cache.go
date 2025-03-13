@@ -3,6 +3,7 @@ package warehouse
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 // Ensure SimpleCache implements the Cache interface
@@ -23,7 +24,7 @@ type Cache[T any] interface {
 // CacheLocation represents the position of an item in a cache
 type CacheLocation struct {
 	Key   string
-	Index uint32
+	Index atomic.Uint32
 }
 
 // SimpleCache implements the Cache interface with a slice-backed storage

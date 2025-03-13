@@ -18,11 +18,6 @@ var _ Entity = &entity{}
 type Entity interface {
 	table.Entry
 
-	SetParent(parent Entity, callback EntityDestroyCallback) error
-	Parent() Entity
-
-	SetDestroyCallback(EntityDestroyCallback) error
-
 	AddComponent(Component) error
 	AddComponentWithValue(Component, any) error
 	RemoveComponent(Component) error
@@ -45,17 +40,9 @@ type EntityDestroyCallback func(Entity)
 // entity implements the Entity interface
 type entity struct {
 	table.Entry
-	id            table.EntryID
-	sto           Storage
-	relationships relationships
-	components    []Component
-}
-
-// relationships tracks parent-child relationships and destroy callbacks
-type relationships struct {
-	recycled  int
-	parent    Entity
-	onDestroy EntityDestroyCallback
+	id         table.EntryID
+	sto        Storage
+	components []Component
 }
 
 // ID returns the entity's unique identifier
@@ -81,39 +68,6 @@ func (e *entity) Table() table.Table {
 // Storage returns the storage this entity belongs to
 func (e *entity) Storage() Storage {
 	return e.sto
-}
-
-// SetParent establishes a parent-child relationship with another entity
-func (e *entity) SetParent(parent Entity, callback EntityDestroyCallback) error {
-	if e.relationships.parent != nil {
-		return fmt.Errorf(
-			"entity already has parent", "attemped child", e, "attempted parent", parent, "existing parent", e.relationships.parent,
-		)
-	}
-	e.relationships.parent = parent
-	e.relationships.recycled = parent.Recycled()
-	err := parent.SetDestroyCallback(callback)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// Parent returns the parent entity if it exists and hasn't been recycled
-func (e *entity) Parent() Entity {
-	if e.relationships.parent != nil {
-		if e.relationships.parent.Recycled() != e.relationships.recycled {
-			return nil
-		}
-		return e.relationships.parent
-	}
-	return nil
-}
-
-// SetDestroyCallback sets the callback to be invoked when this entity is destroyed
-func (e *entity) SetDestroyCallback(callback EntityDestroyCallback) error {
-	e.relationships.onDestroy = callback
-	return nil
 }
 
 // AddComponent adds a component to the entity, moving it to a new archetype if needed

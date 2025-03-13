@@ -3,8 +3,6 @@ package warehouse
 import (
 	"iter"
 	"sync/atomic"
-
-	"github.com/TheBitDrifter/table"
 )
 
 // Ensure Cursor implements iCursor interface
@@ -12,8 +10,9 @@ var _ iCursor = &Cursor{}
 
 // iCursor defines the interface for iterating over entities in storage
 type iCursor interface {
-	Entities() iter.Seq2[int, table.Table]
-	Next() bool
+	Next() iter.Seq[*Cursor]
+	// Deprecated
+	OldNext() bool
 }
 
 type iterBitLock32 struct {
@@ -51,8 +50,9 @@ func newCursor(query QueryNode, storage Storage) *Cursor {
 	}
 }
 
-// Next advances to the next entity and returns whether one exists
-func (c *Cursor) Next() bool {
+// Deprecated
+// OldNext advances to the next entity and returns whether one exists
+func (c *Cursor) OldNext() bool {
 	if c.entityIndex < c.remaining {
 		c.entityIndex++
 		return true
@@ -81,9 +81,13 @@ func (c *Cursor) advance() bool {
 	return false
 }
 
-// Entities returns an iterator sequence over entities matching the query
-func (c *Cursor) Entities() iter.Seq2[int, table.Table] {
-	return func(yield func(int, table.Table) bool) {
+// Next advances the cursor and returns it
+//
+// Whats especially useful about using an iterator pattern here (instead of the deprecated loop version)
+// is the automatic cleanup via the magic yield func — It's pretty lit! It also didn't exist when I first started
+// looking into this project, so that's pretty cool
+func (c *Cursor) Next() iter.Seq[*Cursor] {
+	return func(yield func(*Cursor) bool) {
 		c.Initialize()
 
 		for c.storageIndex < len(c.matchedStorages) {
@@ -91,11 +95,11 @@ func (c *Cursor) Entities() iter.Seq2[int, table.Table] {
 			c.remaining = c.currentArchetype.table.Length()
 
 			for c.entityIndex < c.remaining {
-				if !yield(c.entityIndex, c.currentArchetype.table) {
+				c.entityIndex++
+				if !yield(c) {
 					c.Reset()
 					return
 				}
-				c.entityIndex++
 			}
 
 			c.entityIndex = 0

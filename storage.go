@@ -35,15 +35,16 @@ type Storage interface {
 	TransferEntities(target Storage, entities ...Entity) error
 	Enqueue(EntityOperation)
 	Archetypes() []ArchetypeImpl
+	TotalEntities() int
 }
 
 // storage implements the Storage interface
 type storage struct {
 	locks          mask.Mask256
+	lockmu         sync.RWMutex
 	schema         table.Schema
 	archetypes     *archetypes
 	operationQueue EntityOperationsQueue
-	lockMu         sync.Mutex // Added mutex to protect concurrent access to locks
 }
 
 // archetypes manages archetype collections and identification
@@ -153,22 +154,22 @@ func (sto *storage) RowIndexFor(c Component) uint32 {
 
 // Locked checks if the storage is currently locked
 func (sto *storage) Locked() bool {
-	sto.lockMu.Lock()
-	defer sto.lockMu.Unlock()
+	sto.lockmu.Lock()
+	defer sto.lockmu.Unlock()
 	return !sto.locks.IsEmpty()
 }
 
 // AddLock adds a bit lock to prevent entity modifications
 func (sto *storage) AddLock(bit uint32) {
-	sto.lockMu.Lock()
-	defer sto.lockMu.Unlock()
+	sto.lockmu.Lock()
+	defer sto.lockmu.Unlock()
 	sto.locks.Mark(bit)
 }
 
 // RemoveLock releases a specific bit lock and processes queued operations if fully unlocked
 func (sto *storage) RemoveLock(bit uint32) {
-	sto.lockMu.Lock()
-	defer sto.lockMu.Unlock()
+	sto.lockmu.Lock()
+	defer sto.lockmu.Unlock()
 
 	sto.locks.Unmark(bit)
 
@@ -176,7 +177,7 @@ func (sto *storage) RemoveLock(bit uint32) {
 	if sto.locks.IsEmpty() {
 		// Release the lock before processing queue to avoid deadlocks
 		// since processing may involve acquiring the lock again
-		sto.lockMu.Unlock()
+		sto.lockmu.Unlock()
 
 		err := sto.operationQueue.ProcessAll(sto)
 		if err != nil {
@@ -185,7 +186,7 @@ func (sto *storage) RemoveLock(bit uint32) {
 		}
 
 		// Re-acquire the lock
-		sto.lockMu.Lock()
+		sto.lockmu.Lock()
 	}
 }
 
@@ -212,27 +213,19 @@ func (s *storage) DestroyEntities(entities ...Entity) error {
 	if s.Locked() {
 		return errors.New("storage is locked")
 	}
-	tableGroups := make(map[table.Table][]int)
-	for _, entity := range entities {
-		if entity == nil {
-			continue
-		}
-		tableGroups[entity.Table()] = append(tableGroups[entity.Table()], int(entity.ID()))
-	}
-	for tbl, ids := range tableGroups {
-		_, err := tbl.DeleteEntries(ids...)
-		if err != nil {
-			return fmt.Errorf("failed to delete entries: %w", err)
-		}
-	}
 	for _, en := range entities {
 		if en == nil {
 			continue
 		}
-		index := en.ID() - 1
-		if int(index) < len(globalEntities) {
-			globalEntities[index] = entity{}
+
+		id := int(en.ID())
+		table := en.Table()
+		_, err := table.DeleteEntries(en.Index())
+		if err != nil {
+			return err
 		}
+		globalEntities[id] = entity{}
+
 	}
 	return nil
 }
@@ -291,6 +284,14 @@ func (s *storage) Enqueue(op EntityOperation) {
 // Archetypes returns all archetypes in this storage
 func (s *storage) Archetypes() []ArchetypeImpl {
 	return s.archetypes.asSlice
+}
+
+func (s *storage) TotalEntities() int {
+	total := 0
+	for _, archetype := range s.archetypes.asSlice {
+		total += archetype.table.Length()
+	}
+	return total
 }
 
 // tableFor gets or creates a table for the given component set

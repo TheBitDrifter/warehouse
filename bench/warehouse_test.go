@@ -35,7 +35,36 @@ func BenchmarkIterWarehouseGet(b *testing.B) {
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		for cursor.Next() {
+		for cursor.OldNext() {
+			pos := position.GetFromCursor(cursor)
+			vel := velocity.GetFromCursor(cursor)
+
+			pos.X += vel.X
+			pos.Y += vel.Y
+		}
+	}
+}
+
+func BenchmarkIterWarehouseGetIter(b *testing.B) {
+	b.StopTimer()
+
+	velocity := warehouse.FactoryNewComponent[Velocity]()
+	position := warehouse.FactoryNewComponent[Position]()
+	schema := table.Factory.NewSchema()
+	storage := warehouse.Factory.NewStorage(schema)
+
+	storage.NewEntities(nPosVel, position, velocity)
+	storage.NewEntities(nPos, position)
+
+	query := warehouse.Factory.NewQuery()
+	query.And(velocity, position)
+	cursor := warehouse.Factory.NewCursor(query, storage)
+
+	b.StartTimer()
+
+	for i := 0; i < b.N; i++ {
+		for range cursor.Next() {
+
 			pos := position.GetFromCursor(cursor)
 			vel := velocity.GetFromCursor(cursor)
 
