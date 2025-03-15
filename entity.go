@@ -14,23 +14,45 @@ import (
 // Verify entity implements Entity interface
 var _ Entity = &entity{}
 
-// Entity represents a game object with components and hierarchical relationships
+// Entity represents a game object that's composed of components.
+// Entities are essentially IDs that tie related components together.
+//
+// An entity's behavior is determined by which components are attached to it.
+// Adding or removing components changes the entity's archetype (its component signature).
 type Entity interface {
 	table.Entry
 
+	// AddComponent attaches a component to this entity
 	AddComponent(Component) error
+
+	// AddComponentWithValue attaches a component with an initial value
 	AddComponentWithValue(Component, any) error
+
+	// RemoveComponent detaches a component from this entity
 	RemoveComponent(Component) error
 
+	// EnqueueAddComponent schedules a component addition when storage is locked
 	EnqueueAddComponent(Component) error
+
+	// EnqueueAddComponentWithValue schedules a component addition with value when storage is locked
 	EnqueueAddComponentWithValue(Component, any) error
+
+	// EnqueueRemoveComponent schedules a component removal when storage is locked
 	EnqueueRemoveComponent(Component) error
 
+	// Components returns all components attached to this entity
 	Components() []Component
+
+	// ComponentsAsString returns a string representation of component names
 	ComponentsAsString() string
 
+	// Valid returns whether this entity has a valid ID
 	Valid() bool
+
+	// Storage returns the storage this entity belongs to
 	Storage() Storage
+
+	// SetStorage changes the storage this entity belongs to
 	SetStorage(Storage)
 }
 
